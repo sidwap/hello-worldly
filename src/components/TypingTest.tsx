@@ -680,8 +680,7 @@ const TypingTest = ({ settings, onComplete, currentTest, selectedExamSlug }: Typ
             net_speed: netSpeed,
             backspace_count: backspaceCount,
             is_qualified: isQualified,
-            typed_text: typedText,
-            word_limit_used: wordLimitEnabled ? wordLimit : null
+            typed_text: typedText
           }]);
           
         if (insertError) {
@@ -798,8 +797,7 @@ const TypingTest = ({ settings, onComplete, currentTest, selectedExamSlug }: Typ
           time_taken: results.timeTaken,
           exam_type: 'all_exam',
           backspace_count: backspaceCount,
-          typed_text: userInput,
-          word_limit_used: wordLimitEnabled ? wordLimit : null,
+          typed_text: typedText,
           skipped_words: stats.skippedWords,
           extra_words: stats.extraWords
         }]);
