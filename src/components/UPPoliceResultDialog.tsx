@@ -46,16 +46,20 @@ const UPPoliceResultDialog = ({ isOpen, onClose, result }: UPPoliceResultDialogP
     enabled: !!result?.test_id && isOpen
   });
 
-  // Apply word limit if it was used during the test
+  // Apply word limit based on database values
+  // Priority: word_limit_used > total_words > full content
   const limitedContent = useMemo(() => {
     if (!testData?.content) return '';
-    const wordLimitUsed = result?.word_limit_used;
-    if (wordLimitUsed && wordLimitUsed > 0) {
+    
+    // First try word_limit_used, then fall back to total_words from database
+    const wordLimit = result?.word_limit_used || result?.total_words;
+    
+    if (wordLimit && wordLimit > 0) {
       const words = testData.content.split(' ').filter((w: string) => w.trim() !== '');
-      return words.slice(0, wordLimitUsed).join(' ');
+      return words.slice(0, wordLimit).join(' ');
     }
     return testData.content;
-  }, [testData?.content, result?.word_limit_used]);
+  }, [testData?.content, result?.word_limit_used, result?.total_words]);
 
   // Compute word comparison using LCS algorithm with limited content
   const comparison: ComparisonResult | null = useMemo(() => {
@@ -500,12 +504,12 @@ const UPPoliceResultDialog = ({ isOpen, onClose, result }: UPPoliceResultDialogP
                   </div>
                 </div>
                 <div className="grid grid-cols-2">
-                  <div className="p-4 border-r border-border bg-background max-h-[400px] overflow-y-auto">
+                  <div className="p-4 border-r border-border bg-background">
                     <div className="text-sm leading-loose text-justify">
                       {limitedContent}
                     </div>
                   </div>
-                  <div className="p-4 bg-background max-h-[400px] overflow-y-auto">
+                  <div className="p-4 bg-background">
                     <div className="text-sm leading-loose text-justify">
                       {renderTypedText()}
                     </div>
