@@ -93,8 +93,10 @@ const StandardResultDialog = ({ isOpen, onClose, result, showQualificationStatus
     : 0);
   const netSpeed = result.wpm || 0;
 
-  // Get stats from comparison or result
-  const stats = comparison?.stats || {
+  // ALWAYS use database values as primary source for stats
+  // The comparison is only used for visual paragraph display
+  // This ensures word limits and other test-time settings are respected
+  const stats = {
     totalWords: result.total_words || 0,
     correctWords: result.correct_words_count || 0,
     wrongWords: result.incorrect_words || 0,
