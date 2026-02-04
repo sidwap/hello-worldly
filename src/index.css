@@ -2,10 +2,6 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
-All colors MUST be HSL.
-*/
-
 @layer base {
   :root {
     --background: 0 0% 100%;
@@ -92,6 +88,29 @@ All colors MUST be HSL.
     --sidebar-border: 240 3.7% 15.9%;
     --sidebar-ring: 217.2 91.2% 59.8%;
   }
+  
+  /* UP Police theme variables (scoped to UP Police interface) */
+  .up-police-theme {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+
+    --primary: 213 72% 40%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+
+    --border: 213 25% 80%;
+
+    --up-police-page: 210 20% 96%;
+    --up-police-header: 213 72% 40%;
+    --up-police-header-dark: 213 72% 32%;
+    --up-police-input-bg: 78 85% 78%;
+    --up-police-typed-color: 0 0% 0%;
+  }
 }
 
 @layer base {
@@ -102,4 +121,52 @@ All colors MUST be HSL.
   body {
     @apply bg-background text-foreground;
   }
+}
+
+/* UP Police Typing Test Styles */
+.up-police-fullscreen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 9999;
+  background-color: hsl(var(--up-police-page));
+  overflow-y: auto;
+}
+
+.header-bar {
+  background: linear-gradient(
+    180deg,
+    hsl(var(--up-police-header)) 0%,
+    hsl(var(--up-police-header-dark)) 100%
+  );
+  color: hsl(var(--primary-foreground));
+}
+
+.content-box {
+  background-color: hsl(var(--background));
+  border: 1px solid hsl(var(--border));
+  border-radius: 0.5rem;
+  padding: 1rem 1.25rem;
+  line-height: 2;
+  box-shadow: inset 0 1px 2px hsl(0 0% 0% / 0.08);
+}
+
+.typing-textarea {
+  background-color: hsl(var(--up-police-input-bg));
+  border-radius: 0.5rem;
+  padding: 1rem;
+  line-height: 2;
+  box-shadow: inset 0 1px 2px hsl(0 0% 0% / 0.08);
+}
+
+.typing-textarea:focus {
+  outline: none;
+  border-color: hsl(var(--up-police-header));
+  box-shadow: 0 0 0 3px hsl(var(--up-police-header) / 0.25);
+}
+
+.typing-textarea::placeholder {
+  color: hsl(var(--muted-foreground));
 }
