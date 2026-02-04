@@ -98,7 +98,7 @@ export const UP_POLICE_CONFIG: ExamConfig = {
   enableSound: true,
   enableFontSizeControl: true,
   enableWordLimit: false,
-  defaultWordLimit: { english: 500, hindi: 400 },
+  defaultWordLimit: { english: 510, hindi: 410 },
   showSkippedWords: true,
   showExtraWords: true,
   showQualificationStatus: true,
