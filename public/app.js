@@ -1457,6 +1457,26 @@ function pickUpload() {
   inp.click();
 }
 window.pickUpload = pickUpload;
+async function pickUploadUrl() {
+  if (!state.currentFolder) return toast("Open a folder first");
+  const url = await uiPrompt({
+    title: "Upload from URL",
+    label: "The file is downloaded on the server and sent to Telegram.",
+    placeholder: "https://example.com/file.zip",
+    value: "",
+    okText: "Upload",
+    validate: (v) => (!v || !v.trim() ? "Enter a URL" : !/^https?:\/\/\S+$/i.test(v.trim()) ? "Enter a valid http(s) URL" : null),
+  });
+  if (!url) return;
+  const clean = url.trim();
+  let name = "download";
+  try {
+    name = decodeURIComponent(new URL(clean).pathname.split("/").filter(Boolean).pop() || "") || "download";
+  } catch {}
+  addUploadTask({ url: clean, name, folderId: state.currentFolder });
+}
+window.pickUploadUrl = pickUploadUrl;
+
 async function pickUploadFolder() {
   if (!state.currentFolder) return toast("Open a folder first");
   const inp = el(`<input type="file" webkitdirectory directory multiple hidden />`);
