@@ -1313,8 +1313,28 @@ function uploadTask(t, signal) {
     };
     es.onerror = () => {};
 
+    // URL imports are fetched server-side — a small JSON POST, no SW needed.
+    if (t.url) {
+      fetch(`/api/files/upload-url?folder=${t.folderId}`, {
+        method: "POST",
+        credentials: "include",
+        signal,
+        headers: { "X-Job": job, "Content-Type": "application/json" },
+        body: JSON.stringify({ url: t.url, name: t.name }),
+      })
+        .then(async (r) => {
+          if (!r.ok) {
+            const j = await r.json().catch(() => ({}));
+            finish(new Error(j.error || "Upload failed"));
+          } else finish();
+        })
+        .catch((err) => finish(err));
+      return;
+    }
+
     const headers = { "X-Job": job, "X-Filename": encodeURIComponent(t.name), "X-Filesize": t.size, "X-Force-Document": "1", "Content-Type": "application/octet-stream" };
     if (swActive && navigator.serviceWorker && navigator.serviceWorker.controller) {
+
       // Hand the upload to the service worker so it survives page navigation.
       navigator.serviceWorker.controller.postMessage({
         type: "upload", id: t.id, url: `/api/files/upload?folder=${t.folderId}`,
