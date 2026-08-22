@@ -127,7 +127,7 @@ async function uploadHandler(req, res, next, source = null) {
     const { row, peer } = await loadFolder(req);
     const client = await getConnectedClient(req.accountId);
     const fileName = safeFilename(source ? source.fileName : decodeURIComponent(req.headers["x-filename"] || "file"));
-    const size = Number(source ? source.size || 0 : req.headers["x-filesize"] || 0);
+    let size = Number(source ? source.size || 0 : req.headers["x-filesize"] || 0);
     const caption = req.headers["x-caption"] ? decodeURIComponent(req.headers["x-caption"]) : "";
     const forceDocument = source ? true : req.headers["x-force-document"] !== "0";
 
