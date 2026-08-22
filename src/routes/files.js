@@ -149,8 +149,10 @@ async function uploadHandler(req, res, next, source = null) {
       if (!source) req.on("aborted", () => reject(new Error("Client aborted upload")));
     });
 
-
+    // URL imports may not advertise a length — trust the bytes actually written.
+    if (!size) { try { size = fs.statSync(tmp).size; } catch {} }
     if (job) publish(job, { phase: "sending", uploaded: 0, total: size, ratio: 0 });
+
     let thumbPath;
     if (IMAGE_RE.test(fileName)) {
       try {
