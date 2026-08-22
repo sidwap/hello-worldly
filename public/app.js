@@ -502,6 +502,7 @@ function openNewMenu(anchor) {
     { divider: true },
     { icon: icon("uploadCloud", { size: 18 }), label: "Upload files", onClick: () => (inFolder ? pickUpload() : toast("Open a folder first")) },
     { icon: icon("hardDriveDownload", { size: 18 }), label: "Upload folder", onClick: () => (inFolder ? pickUploadFolder() : toast("Open a folder first")) },
+    { icon: icon("link", { size: 18 }), label: "Upload from URL", onClick: () => (inFolder ? pickUploadUrl() : toast("Open a folder first")) },
   ]);
 }
 function openAvatarMenu(anchor) {
@@ -646,7 +647,7 @@ function renderFiles() {
       wireFolderCards(c);
       return;
     }
-    c.innerHTML = emptyHtml(state.search ? "No files match your search." : "This folder is empty", state.search ? "search" : "uploadCloud", state.search ? "" : `<button class="primary" onclick="pickUpload()">${icon("uploadCloud", { size: 16 })} Upload files</button>`);
+    c.innerHTML = emptyHtml(state.search ? "No files match your search." : "This folder is empty", state.search ? "search" : "uploadCloud", state.search ? "" : `<button class="primary" onclick="pickUpload()">${icon("uploadCloud", { size: 16 })} Upload files</button> <button class="btn-2" onclick="pickUploadUrl()">${icon("link", { size: 16 })} From URL</button>`);
     return;
   }
   const selInfo = state.selected.size ? `<span class="sel-info">${icon("check", { size: 13 })} ${state.selected.size} selected</span>` : "";
@@ -1210,19 +1211,22 @@ function retryUpload(id) {
 }
 
 /* ---- task lifecycle ---- */
-function addUploadTask({ file, name, folderId }) {
+function addUploadTask({ file, url, name, folderId }) {
+  const size = file ? file.size : 0;
   const t = {
     id: (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2)),
     name,
     file,
+    url,
     folderId,
-    size: file.size,
+    size,
     uploaded: 0,
-    total: file.size,
+    total: size,
     phase: "queued",
     error: null,
     part: null,
   };
+
   up.queue.push(t);
   mountUploader();
   scheduleUpRender();
@@ -1310,8 +1314,28 @@ function uploadTask(t, signal) {
     };
     es.onerror = () => {};
 
+    // URL imports are fetched server-side — a small JSON POST, no SW needed.
+    if (t.url) {
+      fetch(`/api/files/upload-url?folder=${t.folderId}`, {
+        method: "POST",
+        credentials: "include",
+        signal,
+        headers: { "X-Job": job, "Content-Type": "application/json" },
+        body: JSON.stringify({ url: t.url, name: t.name }),
+      })
+        .then(async (r) => {
+          if (!r.ok) {
+            const j = await r.json().catch(() => ({}));
+            finish(new Error(j.error || "Upload failed"));
+          } else finish();
+        })
+        .catch((err) => finish(err));
+      return;
+    }
+
     const headers = { "X-Job": job, "X-Filename": encodeURIComponent(t.name), "X-Filesize": t.size, "X-Force-Document": "1", "Content-Type": "application/octet-stream" };
     if (swActive && navigator.serviceWorker && navigator.serviceWorker.controller) {
+
       // Hand the upload to the service worker so it survives page navigation.
       navigator.serviceWorker.controller.postMessage({
         type: "upload", id: t.id, url: `/api/files/upload?folder=${t.folderId}`,
@@ -1457,6 +1481,26 @@ function pickUpload() {
   inp.click();
 }
 window.pickUpload = pickUpload;
+async function pickUploadUrl() {
+  if (!state.currentFolder) return toast("Open a folder first");
+  const url = await uiPrompt({
+    title: "Upload from URL",
+    label: "The file is downloaded on the server and sent to Telegram.",
+    placeholder: "https://example.com/file.zip",
+    value: "",
+    okText: "Upload",
+    validate: (v) => (!v || !v.trim() ? "Enter a URL" : !/^https?:\/\/\S+$/i.test(v.trim()) ? "Enter a valid http(s) URL" : null),
+  });
+  if (!url) return;
+  const clean = url.trim();
+  let name = "download";
+  try {
+    name = decodeURIComponent(new URL(clean).pathname.split("/").filter(Boolean).pop() || "") || "download";
+  } catch {}
+  addUploadTask({ url: clean, name, folderId: state.currentFolder });
+}
+window.pickUploadUrl = pickUploadUrl;
+
 async function pickUploadFolder() {
   if (!state.currentFolder) return toast("Open a folder first");
   const inp = el(`<input type="file" webkitdirectory directory multiple hidden />`);

@@ -118,37 +118,41 @@ files.get("/files/upload/progress", requireAppAuth, (req, res) => {
   });
 });
 
-/* --------- upload --------- */
-files.post("/files/upload", requireAppAuth, requireAccount, async (req, res, next) => {
+/* --------- upload (shared by device upload and URL import) --------- */
+async function uploadHandler(req, res, next, source = null) {
   const job = String(req.headers["x-job"] || "");
   let tmp = "";
   let upDir = "";
   try {
     const { row, peer } = await loadFolder(req);
     const client = await getConnectedClient(req.accountId);
-    const fileName = safeFilename(decodeURIComponent(req.headers["x-filename"] || "file"));
-    const size = Number(req.headers["x-filesize"] || 0);
+    const fileName = safeFilename(source ? source.fileName : decodeURIComponent(req.headers["x-filename"] || "file"));
+    let size = Number(source ? source.size || 0 : req.headers["x-filesize"] || 0);
     const caption = req.headers["x-caption"] ? decodeURIComponent(req.headers["x-caption"]) : "";
-    const forceDocument = req.headers["x-force-document"] !== "0";
+    const forceDocument = source ? true : req.headers["x-force-document"] !== "0";
 
     upDir = fs.mkdtempSync("/tmp/tgd-up-");
     tmp = `${upDir}/${fileName}`;
     const out = fs.createWriteStream(tmp);
     let received = 0;
+    const input = source ? source.stream : req;
     await new Promise((resolve, reject) => {
       const onData = (c) => {
         received += c.length;
-        if (job && size) publish(job, { phase: "receiving", received, size, ratio: received / size });
+        if (job) publish(job, { phase: "receiving", received, size, ratio: size ? received / size : 0 });
       };
-      req.on("data", onData);
-      req.pipe(out);
+      input.on("data", onData);
+      input.pipe(out);
       out.on("finish", () => resolve());
       out.on("error", reject);
-      req.on("error", reject);
-      req.on("aborted", () => reject(new Error("Client aborted upload")));
+      input.on("error", reject);
+      if (!source) req.on("aborted", () => reject(new Error("Client aborted upload")));
     });
 
+    // URL imports may not advertise a length — trust the bytes actually written.
+    if (!size) { try { size = fs.statSync(tmp).size; } catch {} }
     if (job) publish(job, { phase: "sending", uploaded: 0, total: size, ratio: 0 });
+
     let thumbPath;
     if (IMAGE_RE.test(fileName)) {
       try {
@@ -263,7 +267,55 @@ files.post("/files/upload", requireAppAuth, requireAccount, async (req, res, nex
     if (aborted) return res.status(499).end(); // client went away — don't log a 500
     next(e);
   }
+}
+
+files.post("/files/upload", requireAppAuth, requireAccount, (req, res, next) => uploadHandler(req, res, next));
+
+/* --------- upload from URL --------- */
+function nameFromUrl(u, headers) {
+  const cd = headers?.get?.("content-disposition") || "";
+  const star = /filename\*=(?:UTF-8'')?([^;]+)/i.exec(cd);
+  const plain = /filename="?([^";]+)"?/i.exec(cd);
+  let name = star ? decodeURIComponent(star[1].trim()) : plain ? plain[1].trim() : "";
+  if (!name) {
+    try {
+      name = decodeURIComponent(new URL(u).pathname.split("/").filter(Boolean).pop() || "");
+    } catch {}
+  }
+  if (!name) name = "download";
+  if (!/\.[a-z0-9]{1,8}$/i.test(name)) {
+    const ext = mime.extension(String(headers?.get?.("content-type") || "").split(";")[0].trim());
+    if (ext) name += "." + ext;
+  }
+  return name;
+}
+
+files.post("/files/upload-url", requireAppAuth, requireAccount, async (req, res, next) => {
+  const job = String(req.headers["x-job"] || "");
+  try {
+    const raw = String(req.body?.url || "").trim();
+    let parsed;
+    try {
+      parsed = new URL(raw);
+    } catch {
+      throw new HttpError(400, "Enter a valid URL");
+    }
+    if (!/^https?:$/.test(parsed.protocol)) throw new HttpError(400, "Only http(s) URLs are supported");
+
+    const r = await fetch(parsed.toString(), { redirect: "follow", headers: { "User-Agent": "Mozilla/5.0 (tgdrive)" } });
+    if (!r.ok || !r.body) throw new HttpError(400, `Download failed (${r.status})`);
+
+    const declared = Number(r.headers.get("content-length") || 0);
+    const fileName = safeFilename(String(req.body?.name || "").trim() || nameFromUrl(parsed.toString(), r.headers));
+    const { Readable } = await import("node:stream");
+    const stream = Readable.fromWeb(r.body);
+    return await uploadHandler(req, res, next, { stream, fileName, size: declared });
+  } catch (e) {
+    if (job) fail(job, e);
+    next(e);
+  }
 });
+
 
 /* --------- single + raw + thumb --------- */
 files.get("/files/:id", requireAppAuth, requireAccount, async (req, res, next) => {
