@@ -502,6 +502,7 @@ function openNewMenu(anchor) {
     { divider: true },
     { icon: icon("uploadCloud", { size: 18 }), label: "Upload files", onClick: () => (inFolder ? pickUpload() : toast("Open a folder first")) },
     { icon: icon("hardDriveDownload", { size: 18 }), label: "Upload folder", onClick: () => (inFolder ? pickUploadFolder() : toast("Open a folder first")) },
+    { icon: icon("link", { size: 18 }), label: "Upload from URL", onClick: () => (inFolder ? pickUploadUrl() : toast("Open a folder first")) },
   ]);
 }
 function openAvatarMenu(anchor) {
@@ -646,7 +647,7 @@ function renderFiles() {
       wireFolderCards(c);
       return;
     }
-    c.innerHTML = emptyHtml(state.search ? "No files match your search." : "This folder is empty", state.search ? "search" : "uploadCloud", state.search ? "" : `<button class="primary" onclick="pickUpload()">${icon("uploadCloud", { size: 16 })} Upload files</button>`);
+    c.innerHTML = emptyHtml(state.search ? "No files match your search." : "This folder is empty", state.search ? "search" : "uploadCloud", state.search ? "" : `<button class="primary" onclick="pickUpload()">${icon("uploadCloud", { size: 16 })} Upload files</button> <button class="btn-2" onclick="pickUploadUrl()">${icon("link", { size: 16 })} From URL</button>`);
     return;
   }
   const selInfo = state.selected.size ? `<span class="sel-info">${icon("check", { size: 13 })} ${state.selected.size} selected</span>` : "";
