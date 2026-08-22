@@ -1210,19 +1210,22 @@ function retryUpload(id) {
 }
 
 /* ---- task lifecycle ---- */
-function addUploadTask({ file, name, folderId }) {
+function addUploadTask({ file, url, name, folderId }) {
+  const size = file ? file.size : 0;
   const t = {
     id: (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2)),
     name,
     file,
+    url,
     folderId,
-    size: file.size,
+    size,
     uploaded: 0,
-    total: file.size,
+    total: size,
     phase: "queued",
     error: null,
     part: null,
   };
+
   up.queue.push(t);
   mountUploader();
   scheduleUpRender();
