@@ -267,7 +267,55 @@ async function uploadHandler(req, res, next, source = null) {
     if (aborted) return res.status(499).end(); // client went away — don't log a 500
     next(e);
   }
+}
+
+files.post("/files/upload", requireAppAuth, requireAccount, (req, res, next) => uploadHandler(req, res, next));
+
+/* --------- upload from URL --------- */
+function nameFromUrl(u, headers) {
+  const cd = headers?.get?.("content-disposition") || "";
+  const star = /filename\*=(?:UTF-8'')?([^;]+)/i.exec(cd);
+  const plain = /filename="?([^";]+)"?/i.exec(cd);
+  let name = star ? decodeURIComponent(star[1].trim()) : plain ? plain[1].trim() : "";
+  if (!name) {
+    try {
+      name = decodeURIComponent(new URL(u).pathname.split("/").filter(Boolean).pop() || "");
+    } catch {}
+  }
+  if (!name) name = "download";
+  if (!/\.[a-z0-9]{1,8}$/i.test(name)) {
+    const ext = mime.extension(String(headers?.get?.("content-type") || "").split(";")[0].trim());
+    if (ext) name += "." + ext;
+  }
+  return name;
+}
+
+files.post("/files/upload-url", requireAppAuth, requireAccount, async (req, res, next) => {
+  const job = String(req.headers["x-job"] || "");
+  try {
+    const raw = String(req.body?.url || "").trim();
+    let parsed;
+    try {
+      parsed = new URL(raw);
+    } catch {
+      throw new HttpError(400, "Enter a valid URL");
+    }
+    if (!/^https?:$/.test(parsed.protocol)) throw new HttpError(400, "Only http(s) URLs are supported");
+
+    const r = await fetch(parsed.toString(), { redirect: "follow", headers: { "User-Agent": "Mozilla/5.0 (tgdrive)" } });
+    if (!r.ok || !r.body) throw new HttpError(400, `Download failed (${r.status})`);
+
+    const declared = Number(r.headers.get("content-length") || 0);
+    const fileName = safeFilename(String(req.body?.name || "").trim() || nameFromUrl(parsed.toString(), r.headers));
+    const { Readable } = await import("node:stream");
+    const stream = Readable.fromWeb(r.body);
+    return await uploadHandler(req, res, next, { stream, fileName, size: declared });
+  } catch (e) {
+    if (job) fail(job, e);
+    next(e);
+  }
 });
+
 
 /* --------- single + raw + thumb --------- */
 files.get("/files/:id", requireAppAuth, requireAccount, async (req, res, next) => {
