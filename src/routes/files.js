@@ -118,35 +118,37 @@ files.get("/files/upload/progress", requireAppAuth, (req, res) => {
   });
 });
 
-/* --------- upload --------- */
-files.post("/files/upload", requireAppAuth, requireAccount, async (req, res, next) => {
+/* --------- upload (shared by device upload and URL import) --------- */
+async function uploadHandler(req, res, next, source = null) {
   const job = String(req.headers["x-job"] || "");
   let tmp = "";
   let upDir = "";
   try {
     const { row, peer } = await loadFolder(req);
     const client = await getConnectedClient(req.accountId);
-    const fileName = safeFilename(decodeURIComponent(req.headers["x-filename"] || "file"));
-    const size = Number(req.headers["x-filesize"] || 0);
+    const fileName = safeFilename(source ? source.fileName : decodeURIComponent(req.headers["x-filename"] || "file"));
+    const size = Number(source ? source.size || 0 : req.headers["x-filesize"] || 0);
     const caption = req.headers["x-caption"] ? decodeURIComponent(req.headers["x-caption"]) : "";
-    const forceDocument = req.headers["x-force-document"] !== "0";
+    const forceDocument = source ? true : req.headers["x-force-document"] !== "0";
 
     upDir = fs.mkdtempSync("/tmp/tgd-up-");
     tmp = `${upDir}/${fileName}`;
     const out = fs.createWriteStream(tmp);
     let received = 0;
+    const input = source ? source.stream : req;
     await new Promise((resolve, reject) => {
       const onData = (c) => {
         received += c.length;
-        if (job && size) publish(job, { phase: "receiving", received, size, ratio: received / size });
+        if (job) publish(job, { phase: "receiving", received, size, ratio: size ? received / size : 0 });
       };
-      req.on("data", onData);
-      req.pipe(out);
+      input.on("data", onData);
+      input.pipe(out);
       out.on("finish", () => resolve());
       out.on("error", reject);
-      req.on("error", reject);
-      req.on("aborted", () => reject(new Error("Client aborted upload")));
+      input.on("error", reject);
+      if (!source) req.on("aborted", () => reject(new Error("Client aborted upload")));
     });
+
 
     if (job) publish(job, { phase: "sending", uploaded: 0, total: size, ratio: 0 });
     let thumbPath;
