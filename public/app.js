@@ -1271,14 +1271,105 @@ async function runTask(t) {
     kickUploader();
   }
 }
+/* ---- job watching ----------------------------------------------------------
+   A single upload is watched two ways at once: a live SSE stream (instant
+   progress) and a slow status poll (a safety net). Mobile networks and proxies
+   routinely kill long-lived streams, and the page may even be reloaded — the
+   poll makes the bar keep moving in every one of those cases and always learns
+   the final result, so an upload can no longer freeze mid-way or report a bogus
+   "Failed to fetch" for a transfer that actually completed. */
+const UP_STORE = "tgdrive.uploads.v1";
+
+function saveUpState() {
+  try {
+    const live = up.queue
+      .filter((i) => i.phase === "uploading" && i.jobId)
+      .map((i) => ({ id: i.id, name: i.name, folderId: i.folderId, size: i.size, jobId: i.jobId, at: Date.now() }));
+    if (live.length) localStorage.setItem(UP_STORE, JSON.stringify(live));
+    else localStorage.removeItem(UP_STORE);
+  } catch {}
+}
+
+function closeWatch(t) {
+  try { t._es && t._es.close(); } catch {}
+  t._es = null;
+  if (t._poll) clearInterval(t._poll);
+  t._poll = null;
+}
+function doneTask(t) {
+  if (t.phase === "done") return;
+  t.phase = "done";
+  t.uploaded = t.total || t.size || 0;
+  closeWatch(t);
+  if (t._finish) t._finish();
+  scheduleUpRender();
+  maybeRefreshCurrentFolder(t.folderId);
+  saveUpState();
+}
+function failTask(t, msg) {
+  if (t.phase === "done" || t.phase === "error") return;
+  t.phase = "error";
+  t.error = msg || "Failed";
+  closeWatch(t);
+  if (t._finish) t._finish(Object.assign(new Error(t.error), { name: t.error === "Cancelled" ? "AbortError" : "Error" }));
+  scheduleUpRender();
+  saveUpState();
+}
+function applyJobState(t, d) {
+  if (!d || t.phase === "done" || t.phase === "error") return;
+  t._seen = Date.now();
+  if (d.error) return failTask(t, d.error);
+  if (d.done) return doneTask(t);
+  if (d.phase === "receiving") {
+    t.stage = "receiving";
+    t.uploaded = Number(d.received) || t.uploaded;
+    t.total = Number(d.size) || t.total;
+  } else if (d.phase === "sending") {
+    t.stage = "sending";
+    t.uploaded = Number(d.uploaded) || 0;
+    t.total = Number(d.total) || t.total;
+    t.part = d.multipart ? d.part : null;
+  }
+  scheduleUpRender();
+}
+// Attach both watchers to a task whose server-side job id is known.
+function watchJob(t) {
+  closeWatch(t);
+  t._seen = t._seen || Date.now();
+  try {
+    const es = new EventSource(`/api/files/upload/progress?job=${t.jobId}`);
+    t._es = es;
+    es.onmessage = (e) => {
+      try { applyJobState(t, JSON.parse(e.data)); } catch {}
+    };
+    es.onerror = () => {}; // EventSource reconnects on its own; polling covers gaps
+  } catch {}
+  t._poll = setInterval(() => pollJob(t), 4000);
+  saveUpState();
+}
+async function pollJob(t) {
+  if (t.phase !== "uploading" || !t.jobId) return;
+  try {
+    const r = await fetch(`/api/files/upload/status?job=${t.jobId}`, { credentials: "include", cache: "no-store" });
+    if (!r.ok) return;
+    const j = await r.json();
+    if (j.known) return applyJobState(t, j.state);
+    // Job unknown on the server: either it hasn't started publishing yet, or the
+    // server restarted. Only give up after a long silence.
+    if (Date.now() - (t._seen || 0) > 180000) failTask(t, "Upload lost — please retry");
+  } catch {
+    // offline / transient — keep watching
+  }
+}
+
 function uploadTask(t, signal) {
   return new Promise((resolve, reject) => {
-    const job = (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2));
+    const job = t.jobId || (crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2));
     let settled = false;
     const finish = (err) => {
       if (settled) return;
       settled = true;
-      try { t._es && t._es.close(); } catch {}
+      closeWatch(t);
       signal && signal.removeEventListener("abort", onAbort);
       err ? reject(err) : resolve();
     };
@@ -1287,32 +1378,19 @@ function uploadTask(t, signal) {
     const onAbort = () => {
       // If the upload is running in the service worker, ask it to abort.
       if (navigator.serviceWorker && navigator.serviceWorker.controller) navigator.serviceWorker.controller.postMessage({ type: "abort", id: t.id });
-      finish(Object.assign(new Error("Cancelled"), { name: "AbortError" }));
+      failTask(t, "Cancelled");
     };
     signal && signal.addEventListener("abort", onAbort);
 
-    // Live progress via SSE while the page is open (best-effort; navigation closes it).
-    const es = new EventSource(`/api/files/upload/progress?job=${job}`);
-    t._es = es;
-    es.onmessage = (e) => {
-      try {
-        const d = JSON.parse(e.data);
-        if (d.error) return finish(new Error(d.error));
-        if (d.phase === "receiving") {
-          t.stage = "receiving";
-          t.uploaded = Number(d.received) || t.uploaded;
-          t.total = Number(d.size) || t.total;
-          scheduleUpRender();
-        } else if (d.phase === "sending") {
-          t.stage = "sending";
-          t.uploaded = Number(d.uploaded) || 0;
-          t.total = Number(d.total) || t.total;
-          t.part = d.multipart ? d.part : null;
-          scheduleUpRender();
-        }
-      } catch {}
+    watchJob(t);
+
+    // A transport-level failure (network blip, page/SW handoff, proxy reset) does
+    // NOT mean the upload failed — the server may well be finishing it. Let the
+    // status poll decide the outcome instead of flashing "Failed to fetch".
+    const onTransportError = (err) => {
+      if (err && err.name === "AbortError") return failTask(t, "Cancelled");
+      pollJob(t);
     };
-    es.onerror = () => {};
 
     // URL imports are fetched server-side — a small JSON POST, no SW needed.
     if (t.url) {
@@ -1326,10 +1404,10 @@ function uploadTask(t, signal) {
         .then(async (r) => {
           if (!r.ok) {
             const j = await r.json().catch(() => ({}));
-            finish(new Error(j.error || "Upload failed"));
-          } else finish();
+            failTask(t, j.error || "Upload failed");
+          } else doneTask(t);
         })
-        .catch((err) => finish(err));
+        .catch(onTransportError);
       return;
     }
 
@@ -1341,7 +1419,7 @@ function uploadTask(t, signal) {
         type: "upload", id: t.id, url: `/api/files/upload?folder=${t.folderId}`,
         file: t.file, headers, name: t.name, folderId: t.folderId, size: t.size, jobId: job,
       });
-      // completion is signalled by onSwUploadStatus -> t._finish
+      // completion is signalled by the SW status message or the progress watchers
     } else {
       fetch(`/api/files/upload?folder=${t.folderId}`, {
         method: "POST",
@@ -1353,15 +1431,38 @@ function uploadTask(t, signal) {
         .then(async (r) => {
           if (!r.ok) {
             const j = await r.json().catch(() => ({}));
-            finish(new Error(j.error || "Upload failed"));
+            failTask(t, j.error || "Upload failed");
           } else {
-            finish();
+            doneTask(t);
           }
         })
-        .catch((err) => finish(err));
+        .catch(onTransportError);
     }
   });
 }
+
+// After a page reload, pick up any uploads that were still running: their jobs
+// live on the server, so the dock reappears and keeps counting up to completion.
+function restoreUploads() {
+  let saved = [];
+  try { saved = JSON.parse(localStorage.getItem(UP_STORE) || "[]"); } catch {}
+  if (!Array.isArray(saved) || !saved.length) return;
+  const fresh = saved.filter((s) => s && s.jobId && Date.now() - (s.at || 0) < 6 * 60 * 60 * 1000);
+  for (const s of fresh) {
+    if (up.queue.some((i) => i.id === s.id)) continue;
+    const t = {
+      id: s.id, name: s.name || "Uploading…", folderId: s.folderId, size: s.size || 0,
+      uploaded: 0, total: s.size || 0, file: null, url: null, jobId: s.jobId,
+      phase: "uploading", error: null, part: null, stage: "sending", _seen: Date.now(),
+    };
+    up.queue.push(t);
+    mountUploader();
+    watchJob(t);
+    pollJob(t);
+  }
+  scheduleUpRender();
+}
+
 let upRefreshTimer = null;
 function maybeRefreshCurrentFolder(folderId) {
   if (!state.currentFolder || state.currentFolder !== folderId || state.currentView) return;
