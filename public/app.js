@@ -1497,37 +1497,18 @@ function onSwUploadStatus(e) {
     // Orphaned upload from a previous page load — re-display it.
     t = {
       id: j.id, name: j.name || "Uploading…", folderId: j.folderId, size: j.size || 0,
-      uploaded: 0, total: j.size || 0, file: null, phase: "uploading", error: null, part: null,
+      uploaded: 0, total: j.size || 0, file: null, jobId: j.jobId || null,
+      phase: "uploading", error: null, part: null, stage: "sending", _seen: Date.now(),
     };
     up.queue.push(t);
     mountUploader();
-    if (j.status === "uploading" && j.jobId) {
-      const es = new EventSource(`/api/files/upload/progress?job=${j.jobId}`);
-      t._es = es;
-      es.onmessage = (ev) => {
-        try {
-          const d = JSON.parse(ev.data);
-          if (d.phase === "receiving") { t.stage = "receiving"; t.uploaded = Number(d.received) || t.uploaded; t.total = Number(d.size) || t.total; }
-          else if (d.phase === "sending") { t.stage = "sending"; t.uploaded = Number(d.uploaded) || 0; t.total = Number(d.total) || t.total; t.part = d.multipart ? d.part : null; }
-          scheduleUpRender();
-        } catch {}
-      };
-      es.onerror = () => {};
-    }
+    if (j.status === "uploading" && j.jobId) watchJob(t);
   }
   if (j.status === "done") {
-    t.phase = "done";
-    t.uploaded = t.total;
-    try { t._es && t._es.close(); } catch {}
-    if (t._finish) t._finish();
-    scheduleUpRender();
-    maybeRefreshCurrentFolder(t.folderId);
+    doneTask(t);
   } else if (j.status === "error" || j.status === "aborted") {
-    t.phase = "error";
-    t.error = j.error || "Failed";
-    try { t._es && t._es.close(); } catch {}
-    if (t._finish) t._finish(new Error(t.error));
-    scheduleUpRender();
+    failTask(t, j.error || "Failed");
+
   }
 }
 
