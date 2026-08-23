@@ -2230,4 +2230,6 @@ async function renderPublicShare(id) {
 }
 
 initServiceWorker();
+restoreUploads();
+
 boot();
