@@ -93,6 +93,17 @@ files.get("/files", requireAppAuth, requireAccount, async (req, res, next) => {
   }
 });
 
+/* --------- upload progress (polling fallback) --------- */
+// Lets a client that lost its SSE stream (mobile networks, page reload, proxy
+// timeouts) resume the live progress and learn the final result of a job.
+files.get("/files/upload/status", requireAppAuth, (req, res) => {
+  const job = String(req.query.job || "");
+  if (!job) return res.status(400).json({ error: "job required" });
+  res.set("Cache-Control", "no-store");
+  const snap = snapshot(job);
+  res.json({ job, known: !!snap, state: snap || null });
+});
+
 /* --------- upload progress (SSE) --------- */
 files.get("/files/upload/progress", requireAppAuth, (req, res) => {
   const job = String(req.query.job || "");
@@ -105,18 +116,23 @@ files.get("/files/upload/progress", requireAppAuth, (req, res) => {
   });
   res.flushHeaders?.();
   res.write(":ok\n\n");
-  const send = (d) => res.write(`data: ${JSON.stringify(d)}\n\n`);
+  const send = (d) => {
+    try {
+      res.write(`data: ${JSON.stringify(d)}\n\n`);
+    } catch {}
+  };
   const unsubscribe = subscribe(job, send);
   const keep = setInterval(() => {
     try {
       res.write(":ping\n\n");
     } catch {}
-  }, 20000);
+  }, 15000);
   req.on("close", () => {
     clearInterval(keep);
     unsubscribe();
   });
 });
+
 
 /* --------- upload (shared by device upload and URL import) --------- */
 async function uploadHandler(req, res, next, source = null) {
