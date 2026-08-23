@@ -20,7 +20,7 @@ import {
   streamMultipart,
   streamThumb,
 } from "../tg/operations.js";
-import { publish, subscribe, finish, fail } from "../jobs.js";
+import { publish, subscribe, finish, fail, snapshot } from "../jobs.js";
 import { uid, safeFilename } from "../util.js";
 import { generateThumb, IMAGE_RE } from "../thumb.js";
 
