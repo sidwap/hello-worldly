@@ -7,8 +7,8 @@
   "main": "src/server.js",
   "scripts": {
     "dev": "node src/server.js",
-    "build": "node --check src/server.js",
-    "build:dev": "node --check src/server.js",
+    "build": "rm -rf dist && mkdir -p dist && cp -R public/. dist/",
+    "build:dev": "rm -rf dist && mkdir -p dist && cp -R public/. dist/",
     "start": "node src/server.js"
   },
   "engines": {
