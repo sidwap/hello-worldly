@@ -538,6 +538,7 @@ function renderSidebar() {
     <div class="sec">My Folders</div>
     ${folders || `<div class="nav-muted">No folders yet</div>`}
     <div class="sec">Library</div>
+    ${libItem("uploads", "Uploads", "history")}
     ${libItem("shares", "Share links", "share")}
     ${isAdmin ? libItem("keys", "API keys", "key") : ""}
     ${isAdmin ? libItem("users", "Users", "users") : ""}
@@ -1138,16 +1139,10 @@ function taskRaw(i) {
   const f = Math.max(0, Math.min(1, (i.uploaded || 0) / total));
   return i.stage === "sending" ? 0.5 + f * 0.5 : f * 0.5;
 }
-// Eased bar fill: the first 60% of real progress races through ~75% of the bar
-// (so it feels responsive straight away), then the final 40% trickles through the
-// last 25% so it never stalls at 99%. The % starts at 0; the bar itself is given a
-// small CSS min-width so it never reads as empty the instant an upload starts.
 function taskDisplayPct(i) {
   if (i.phase === "done") return 100;
   if (i.phase !== "uploading") return 0;
-  const raw = taskRaw(i);
-  const eased = raw <= 0.6 ? (raw / 0.6) * 0.75 : 0.75 + ((raw - 0.6) / 0.4) * 0.25;
-  return Math.min(100, Math.round(eased * 100));
+  return Math.min(100, Math.round(taskRaw(i) * 100));
 }
 function itemSub(i, pct) {
   if (i.phase === "queued") return `Queued · ${fmtSize(i.size)}`;
@@ -1305,6 +1300,7 @@ function doneTask(t) {
   scheduleUpRender();
   maybeRefreshCurrentFolder(t.folderId);
   saveUpState();
+  refreshUploadsView();
 }
 function failTask(t, msg) {
   if (t.phase === "done" || t.phase === "error") return;
@@ -1314,6 +1310,7 @@ function failTask(t, msg) {
   if (t._finish) t._finish(Object.assign(new Error(t.error), { name: t.error === "Cancelled" ? "AbortError" : "Error" }));
   scheduleUpRender();
   saveUpState();
+  refreshUploadsView();
 }
 function applyJobState(t, d) {
   if (!d || t.phase === "done" || t.phase === "error") return;
@@ -1331,6 +1328,7 @@ function applyJobState(t, d) {
     t.part = d.multipart ? d.part : null;
   }
   scheduleUpRender();
+  refreshUploadsView();
 }
 // Attach both watchers to a task whose server-side job id is known.
 function watchJob(t) {
@@ -1780,9 +1778,63 @@ async function openView(v) {
   renderSidebar();
   $("#topActions").innerHTML = v === "keys" ? `<button class="primary" onclick="newKey()">${icon("plus", { size: 15 })} New key</button>` : v === "users" ? `<button class="primary" onclick="newUser()">${icon("userPlus", { size: 15 })} Add user</button>` : "";
   if (v === "shares") return viewShares();
+  if (v === "uploads") return viewUploads();
   if (v === "keys") return viewKeys();
   if (v === "users") return viewUsers();
   if (v === "settings") return viewSettings();
+}
+
+let uploadsViewTimer = null;
+function refreshUploadsView() {
+  if (state.currentView !== "uploads") return;
+  clearTimeout(uploadsViewTimer);
+  uploadsViewTimer = setTimeout(viewUploads, 250);
+}
+
+function uploadHistoryRow(u) {
+  const d = u.state || {};
+  const phase = d.error ? "error" : d.done ? "done" : u.phase || "uploading";
+  const task = {
+    phase: phase === "receiving" || phase === "sending" ? "uploading" : phase,
+    stage: d.phase === "sending" ? "sending" : "receiving",
+    uploaded: Number(d.uploaded ?? d.received) || 0,
+    total: Number(d.total ?? d.size) || Number(u.size) || 0,
+    size: Number(u.size) || 0,
+  };
+  const pct = taskDisplayPct(task);
+  const status = phase === "done" ? "Completed" : phase === "error" ? `Failed · ${d.error || "Upload error"}` : d.phase === "sending" ? `Sending to Telegram · ${pct}%` : `Uploading to server · ${pct}%`;
+  const when = new Date(u.updatedAt || u.createdAt || Date.now()).toLocaleString();
+  const statusIcon = phase === "done" ? icon("check", { size: 15 }) : phase === "error" ? icon("alert", { size: 15 }) : `<span class="upd-spinner"></span>`;
+  return `<div class="uploads-row">
+    <div class="upd-iic">${phase === "done" || phase === "error" ? fileIcon(kindOf("", u.name), 18) : `<span class="upd-spinner"></span>`}</div>
+    <div class="uploads-row-main"><div class="uploads-row-name">${esc(u.name)}</div><div class="uploads-row-meta">${fmtSize(u.size)} · ${esc(folderTitle(u.folderId))} · ${esc(when)}</div>${phase !== "done" && phase !== "error" ? `<div class="upd-bar"><div style="width:${pct}%"></div></div>` : ""}</div>
+    <div class="uploads-status ${phase}">${statusIcon}<span>${esc(status)}</span></div>
+  </div>`;
+}
+
+async function viewUploads() {
+  if (state.currentView !== "uploads") return;
+  $("#title").innerHTML = `${icon("history", { size: 18 })} Uploads`;
+  $("#topActions").innerHTML = "";
+  const root = content();
+  if (!root.querySelector(".uploads-page")) root.innerHTML = `<div class="center-load"><div class="spinner"></div></div>`;
+  try {
+    const r = await api("/api/files/uploads/history?limit=100");
+    if (state.currentView !== "uploads") return;
+    const server = Array.isArray(r.uploads) ? r.uploads : [];
+    const known = new Set(server.map((u) => u.id));
+    const local = up.queue.filter((i) => !known.has(i.jobId || i.id)).map((i) => ({
+      id: i.jobId || i.id, folderId: i.folderId, name: i.name, size: i.size,
+      phase: i.phase, updatedAt: Date.now(), state: i.phase === "error" ? { error: i.error } : i.phase === "done" ? { done: true } : { phase: i.stage || "receiving", uploaded: i.uploaded, total: i.total },
+    }));
+    const rows = [...local, ...server];
+    const active = rows.filter((u) => !u.state?.done && !u.state?.error && u.phase !== "done" && u.phase !== "error").length;
+    const done = rows.filter((u) => u.state?.done || u.phase === "done").length;
+    const failed = rows.filter((u) => u.state?.error || u.phase === "error").length;
+    root.innerHTML = `<div class="uploads-page"><div class="uploads-summary"><div class="uploads-stat"><strong>${active}</strong><span>In progress</span></div><div class="uploads-stat"><strong>${done}</strong><span>Completed</span></div><div class="uploads-stat"><strong>${failed}</strong><span>Failed</span></div></div>${rows.length ? `<div class="uploads-list">${rows.map(uploadHistoryRow).join("")}</div>` : emptyHtml("No upload history yet", "history")}</div>`;
+  } catch (err) {
+    root.innerHTML = emptyHtml(err.message, "alert");
+  }
 }
 
 async function viewShares() {
