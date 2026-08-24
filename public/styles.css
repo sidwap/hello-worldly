@@ -513,6 +513,23 @@ a.pub-btn.sm:hover { border-color: var(--accent); color: var(--accent); }
 .upd-iact { flex: none; }
 .upd-ia { background: none; border: none; color: var(--muted); cursor: pointer; padding: 4px; border-radius: 7px; display: grid; place-items: center; }
 .upd-ia:hover { color: var(--text); background: var(--bg); }
+
+/* ---- uploads page ---- */
+.uploads-page { max-width: 980px; margin: 0 auto; }
+.uploads-summary { display: flex; gap: 10px; margin-bottom: 18px; flex-wrap: wrap; }
+.uploads-stat { min-width: 118px; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel); }
+.uploads-stat strong { display: block; font-size: 20px; font-weight: 600; }
+.uploads-stat span { color: var(--muted); font-size: 12px; }
+.uploads-list { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; background: var(--panel); }
+.uploads-row { display: grid; grid-template-columns: 36px minmax(0,1fr) auto; align-items: center; gap: 12px; padding: 13px 14px; border-bottom: 1px solid var(--border); }
+.uploads-row:last-child { border-bottom: 0; }
+.uploads-row-main { min-width: 0; }
+.uploads-row-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.uploads-row-meta { margin-top: 3px; color: var(--muted); font-size: 12px; }
+.uploads-status { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); white-space: nowrap; }
+.uploads-status.done { color: var(--ok); }
+.uploads-status.error { color: var(--danger); }
+.uploads-row .upd-bar { margin-top: 8px; max-width: 460px; }
 .spin-slow { animation: upspin 2.4s linear infinite; }
 @keyframes upspin { to { transform: rotate(360deg); } }
 
@@ -687,4 +704,8 @@ input:focus, textarea:focus, select:focus { border-color: var(--accent); box-sha
   .content { padding: 14px; }
   .searchbox { height: 42px; }
   .searchbox .search { height: 42px; }
+  .uploads-summary { display: grid; grid-template-columns: 1fr 1fr; }
+  .uploads-stat { min-width: 0; }
+  .uploads-row { grid-template-columns: 30px minmax(0,1fr); }
+  .uploads-status { grid-column: 2; justify-self: start; }
 }

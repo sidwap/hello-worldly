@@ -20,7 +20,7 @@ import {
   streamMultipart,
   streamThumb,
 } from "../tg/operations.js";
-import { publish, subscribe, finish, fail, snapshot } from "../jobs.js";
+import { publish, subscribe, finish, fail, snapshot, start } from "../jobs.js";
 import { uid, safeFilename } from "../util.js";
 import { generateThumb, IMAGE_RE } from "../thumb.js";
 
@@ -100,14 +100,32 @@ files.get("/files/upload/status", requireAppAuth, (req, res) => {
   const job = String(req.query.job || "");
   if (!job) return res.status(400).json({ error: "job required" });
   res.set("Cache-Control", "no-store");
-  const snap = snapshot(job);
+  const snap = snapshot(job, req.user.id);
   res.json({ job, known: !!snap, state: snap || null });
+});
+
+files.get("/files/uploads/history", requireAppAuth, requireAccount, (req, res) => {
+  const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 200);
+  const uploads = stmt.listUploadJobs.all(req.user.id, req.accountId, limit).map((row) => {
+    let state = {};
+    try { state = JSON.parse(row.state_json); } catch {}
+    return {
+      id: row.id, folderId: row.folder_id, name: row.name, size: row.size,
+      phase: row.phase, state, createdAt: row.created_at, updatedAt: row.updated_at,
+      finishedAt: row.finished_at,
+    };
+  });
+  res.set("Cache-Control", "no-store");
+  res.json({ uploads });
 });
 
 /* --------- upload progress (SSE) --------- */
 files.get("/files/upload/progress", requireAppAuth, (req, res) => {
   const job = String(req.query.job || "");
   if (!job) return res.status(400).end();
+  // Authorize before opening the stream; after headers are flushed we can no
+  // longer return a clean 404 for another user's job.
+  if (!snapshot(job, req.user.id)) return res.status(404).end();
   res.set({
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache, no-transform",
@@ -121,7 +139,8 @@ files.get("/files/upload/progress", requireAppAuth, (req, res) => {
       res.write(`data: ${JSON.stringify(d)}\n\n`);
     } catch {}
   };
-  const unsubscribe = subscribe(job, send);
+  const unsubscribe = subscribe(job, req.user.id, send);
+  if (!unsubscribe) return res.end();
   const keep = setInterval(() => {
     try {
       res.write(":ping\n\n");
@@ -146,6 +165,14 @@ async function uploadHandler(req, res, next, source = null) {
     let size = Number(source ? source.size || 0 : req.headers["x-filesize"] || 0);
     const caption = req.headers["x-caption"] ? decodeURIComponent(req.headers["x-caption"]) : "";
     const forceDocument = source ? true : req.headers["x-force-document"] !== "0";
+    if (job) start(job, {
+      userId: req.user.id,
+      accountId: req.accountId,
+      folderId: row.id,
+      name: fileName,
+      size,
+      createdAt: Date.now(),
+    });
 
     upDir = fs.mkdtempSync("/tmp/tgd-up-");
     tmp = `${upDir}/${fileName}`;

@@ -94,6 +94,24 @@ CREATE TABLE IF NOT EXISTS multipart_files (
 );
 
 CREATE INDEX IF NOT EXISTS idx_multipart_peer ON multipart_files(account_id, peer_json);
+
+CREATE TABLE IF NOT EXISTS upload_jobs (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  account_id TEXT NOT NULL,
+  folder_id TEXT,
+  name TEXT NOT NULL,
+  size INTEGER NOT NULL DEFAULT 0,
+  phase TEXT NOT NULL DEFAULT 'queued',
+  state_json TEXT NOT NULL DEFAULT '{}',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  finished_at INTEGER,
+  FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY(account_id) REFERENCES accounts(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_upload_jobs_owner ON upload_jobs(user_id, account_id, updated_at DESC);
 `);
 
 // migrations for evolving schema
@@ -168,6 +186,15 @@ export const stmt = {
   deleteSession: db.prepare(`DELETE FROM sessions WHERE sid = ?`),
   deleteExpiredSessions: db.prepare(`DELETE FROM sessions WHERE expires_at < ?`),
   deleteSessionsByUser: db.prepare(`DELETE FROM sessions WHERE user_id = ?`),
+
+  upsertUploadJob: db.prepare(`INSERT INTO upload_jobs (id,user_id,account_id,folder_id,name,size,phase,state_json,created_at,updated_at,finished_at)
+    VALUES (@id,@user_id,@account_id,@folder_id,@name,@size,@phase,@state_json,@created_at,@updated_at,@finished_at)
+    ON CONFLICT(id) DO UPDATE SET phase=excluded.phase, state_json=excluded.state_json, size=excluded.size,
+      updated_at=excluded.updated_at, finished_at=excluded.finished_at`),
+  getUploadJobAny: db.prepare(`SELECT id, user_id FROM upload_jobs WHERE id = ?`),
+  getUploadJob: db.prepare(`SELECT * FROM upload_jobs WHERE id = ? AND user_id = ?`),
+  listUploadJobs: db.prepare(`SELECT * FROM upload_jobs WHERE user_id = ? AND account_id = ? ORDER BY updated_at DESC LIMIT ?`),
+  deleteOldUploadJobs: db.prepare(`DELETE FROM upload_jobs WHERE finished_at IS NOT NULL AND finished_at < ?`),
 };
 
 // Migration: seed an admin user from the legacy single admin password (if present),

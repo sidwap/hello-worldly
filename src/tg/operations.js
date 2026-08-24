@@ -188,6 +188,9 @@ export function uploadFile(client, peer, { filePath, fileName, fileSize, caption
     caption: caption || "",
     forceDocument: !!forceDocument,
     supportsStreaming: true,
+    // GramJS defaults to one worker. Four parallel parts substantially improve
+    // throughput while staying well below its documented instability threshold.
+    workers: 4,
     thumb,
     progressCallback: onProgress,
   });
