@@ -123,6 +123,9 @@ files.get("/files/uploads/history", requireAppAuth, requireAccount, (req, res) =
 files.get("/files/upload/progress", requireAppAuth, (req, res) => {
   const job = String(req.query.job || "");
   if (!job) return res.status(400).end();
+  // Authorize before opening the stream; after headers are flushed we can no
+  // longer return a clean 404 for another user's job.
+  if (!snapshot(job, req.user.id)) return res.status(404).end();
   res.set({
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache, no-transform",
@@ -137,7 +140,7 @@ files.get("/files/upload/progress", requireAppAuth, (req, res) => {
     } catch {}
   };
   const unsubscribe = subscribe(job, req.user.id, send);
-  if (!unsubscribe) return res.status(404).end();
+  if (!unsubscribe) return res.end();
   const keep = setInterval(() => {
     try {
       res.write(":ping\n\n");
