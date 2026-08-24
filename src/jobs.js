@@ -79,7 +79,8 @@ function persist(jobId, immediate = false) {
 
 function store(jobId, data, terminal = false) {
   const previous = state.get(jobId);
-  state.set(jobId, { data, at: Date.now(), terminal, meta: previous?.meta });
+  const merged = { ...(previous?.data || {}), ...data };
+  state.set(jobId, { data: merged, at: Date.now(), terminal, meta: previous?.meta });
   persist(jobId, terminal);
   sweep();
 }
