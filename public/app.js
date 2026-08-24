@@ -1788,7 +1788,7 @@ let uploadsViewTimer = null;
 function refreshUploadsView() {
   if (state.currentView !== "uploads") return;
   clearTimeout(uploadsViewTimer);
-  uploadsViewTimer = setTimeout(viewUploads, 250);
+  uploadsViewTimer = setTimeout(viewUploads, 1000);
 }
 
 function uploadHistoryRow(u) {

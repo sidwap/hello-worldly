@@ -47,6 +47,8 @@ export function subscribe(jobId, userId, fn) {
 
 export function start(jobId, meta) {
   if (!jobId) return;
+  const owner = stmt.getUploadJobAny.get(jobId);
+  if (owner && owner.user_id !== meta.userId) throw new Error("Upload job already exists");
   const now = Date.now();
   const data = { phase: "receiving", received: 0, size: Number(meta.size) || 0, ratio: 0 };
   state.set(jobId, { data, at: now, terminal: false, meta });

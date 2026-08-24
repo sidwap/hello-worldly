@@ -191,6 +191,7 @@ export const stmt = {
     VALUES (@id,@user_id,@account_id,@folder_id,@name,@size,@phase,@state_json,@created_at,@updated_at,@finished_at)
     ON CONFLICT(id) DO UPDATE SET phase=excluded.phase, state_json=excluded.state_json, size=excluded.size,
       updated_at=excluded.updated_at, finished_at=excluded.finished_at`),
+  getUploadJobAny: db.prepare(`SELECT id, user_id FROM upload_jobs WHERE id = ?`),
   getUploadJob: db.prepare(`SELECT * FROM upload_jobs WHERE id = ? AND user_id = ?`),
   listUploadJobs: db.prepare(`SELECT * FROM upload_jobs WHERE user_id = ? AND account_id = ? ORDER BY updated_at DESC LIMIT ?`),
   deleteOldUploadJobs: db.prepare(`DELETE FROM upload_jobs WHERE finished_at IS NOT NULL AND finished_at < ?`),
