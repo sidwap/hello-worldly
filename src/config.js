@@ -6,34 +6,68 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const ROOT = path.resolve(__dirname, "..");
-export const DATA_DIR = path.join(ROOT, "data");
+const LEGACY_DATA_DIR = path.join(ROOT, "data");
+
+// Production releases are often replaced as a whole during deployment. Keep
+// durable application state beside the checkout by default so users, Telegram
+// sessions, folders, shares and upload history survive that replacement.
+const configuredDataDir = String(process.env.DATA_DIR || "").trim();
+export const DATA_DIR = configuredDataDir
+  ? path.resolve(ROOT, configuredDataDir)
+  : process.env.NODE_ENV === "production"
+    ? path.resolve(ROOT, "..", `${path.basename(ROOT)}-data`)
+    : LEGACY_DATA_DIR;
 export const PUBLIC_DIR = path.join(ROOT, "public");
 export const UPLOAD_TMP = path.join(DATA_DIR, "uploads");
 
-for (const d of [DATA_DIR, UPLOAD_TMP]) fs.mkdirSync(d, { recursive: true });
+fs.mkdirSync(DATA_DIR, { recursive: true });
+
+// One-time, non-destructive upgrade from the old in-repository data directory.
+// This runs before SQLite is opened, including its WAL files when present.
+if (DATA_DIR !== LEGACY_DATA_DIR && fs.existsSync(LEGACY_DATA_DIR)) {
+  const targetDb = path.join(DATA_DIR, "tgdrive.sqlite");
+  const legacyDb = path.join(LEGACY_DATA_DIR, "tgdrive.sqlite");
+  if (!fs.existsSync(targetDb) && fs.existsSync(legacyDb)) {
+    for (const entry of fs.readdirSync(LEGACY_DATA_DIR)) {
+      fs.cpSync(path.join(LEGACY_DATA_DIR, entry), path.join(DATA_DIR, entry), {
+        recursive: true,
+        force: false,
+        errorOnExist: false,
+      });
+    }
+    console.log(`[storage] Migrated existing data to persistent directory: ${DATA_DIR}`);
+  }
+}
+
+fs.mkdirSync(UPLOAD_TMP, { recursive: true });
+
+function secretFromEnvFile(envFile) {
+  if (!fs.existsSync(envFile)) return null;
+  for (const line of fs.readFileSync(envFile, "utf8").split("\n")) {
+    const match = line.match(/^SECRET=(.+)$/);
+    if (match && match[1].trim().length >= 32) return match[1].trim();
+  }
+  return null;
+}
 
 function readSecret() {
   const envFile = path.join(ROOT, ".env");
-  if (process.env.SECRET && process.env.SECRET.length >= 32) return process.env.SECRET;
-  if (fs.existsSync(envFile)) {
-    for (const line of fs.readFileSync(envFile, "utf8").split("\n")) {
-      const m = line.match(/^SECRET=(.+)$/);
-      if (m && m[1].trim().length >= 32) return m[1].trim();
-    }
+  const secretFile = path.join(DATA_DIR, ".secret");
+  if (process.env.SECRET && process.env.SECRET.length >= 32) {
+    // Mirror an explicitly configured key into persistent storage so links and
+    // sessions remain stable even if a later deployment replaces the .env file.
+    const saved = fs.existsSync(secretFile) ? fs.readFileSync(secretFile, "utf8").trim() : "";
+    if (saved !== process.env.SECRET) fs.writeFileSync(secretFile, `${process.env.SECRET}\n`, { mode: 0o600 });
+    return process.env.SECRET;
   }
-  const generated = randomBytes(32).toString("hex");
-  const extra = process.env.SECRET ? `\n` : `\n`;
-  const block = `SECRET=${generated}\n`;
-  if (fs.existsSync(envFile)) {
-    let txt = fs.readFileSync(envFile, "utf8");
-    if (/^SECRET=/.test(txt)) txt = txt.replace(/^SECRET=.*$/m, `SECRET=${generated}`);
-    else txt = txt.replace(/\s*$/, "") + "\n" + block;
-    fs.writeFileSync(envFile, txt);
-  } else {
-    fs.writeFileSync(envFile, block);
-  }
-  process.env.SECRET = generated;
-  return generated;
+  const persisted = fs.existsSync(secretFile) ? fs.readFileSync(secretFile, "utf8").trim() : "";
+  if (persisted.length >= 32) return persisted;
+
+  // Preserve the previous installation's key during the storage upgrade.
+  const secret = secretFromEnvFile(envFile) || randomBytes(32).toString("hex");
+  fs.writeFileSync(secretFile, `${secret}\n`, { mode: 0o600 });
+  process.env.SECRET = secret;
+  return secret;
 }
 
 export const config = {

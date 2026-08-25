@@ -127,6 +127,7 @@ All settings are optional except `SECRET`. Copy `.env.example` to `.env` and edi
 |---|---|---|
 | `PORT` | `3001` | HTTP port the app listens on |
 | `HOST` | `127.0.0.1` | Bind address (keep `127.0.0.1` behind a reverse proxy) |
+| `DATA_DIR` | `../tgdrive-data` in production | Persistent directory for the database, Telegram sessions, share links, upload history, branding, and generated signing key. Keep it outside the app checkout. |
 | `SECRET` | *(auto-generated)* | 64+ hex chars used to sign session cookies & share tokens. **Set your own** with `openssl rand -hex 32`. |
 | `PUBLIC_URL` | — | Public base URL (no trailing slash), e.g. `https://drive.example.com`. Used to build share links. |
 | `MAX_UPLOAD_BYTES` | `2147483648` | Max upload size (2 GB; Telegram's per-file cap) |
@@ -160,7 +161,7 @@ Files are never stored on your server's disk — the app streams them straight b
 
 TGWebDrive needs a persistent Node.js process. It is not a drop-in deployment for Vercel or Netlify serverless functions because it maintains Telegram sessions, SQLite metadata, streamed uploads/downloads, and long-lived progress connections.
 
-Use a VPS, or a persistent Node.js host such as Railway, Render, or Fly.io. Keep the `data/` directory backed up: it contains the SQLite database, Telegram sessions, and uploaded branding assets. See [INSTALL.md](INSTALL.md) for PM2, reverse proxy, HTTPS, and upload-size configuration.
+Use a VPS, or a persistent Node.js host such as Railway, Render, or Fly.io. Keep `DATA_DIR` on a persistent disk and back it up: it contains the SQLite database, Telegram sessions, share links, upload history, signing key, and uploaded branding assets. In production it defaults to a sibling `tgdrive-data/` directory outside the replaceable app checkout. See [INSTALL.md](INSTALL.md) for PM2, reverse proxy, HTTPS, and upload-size configuration.
 
 ## Roadmap
 
