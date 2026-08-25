@@ -151,7 +151,7 @@ export const stmt = {
   getShareByFile: db.prepare(`SELECT * FROM shares WHERE account_id = ? AND peer_json = ? AND msg_id = ? ORDER BY created_at DESC LIMIT 1`),
   deleteSharesByFile: db.prepare(`DELETE FROM shares WHERE account_id = ? AND peer_json = ? AND msg_id = ?`),
   deleteFolderShares: db.prepare(`DELETE FROM shares WHERE account_id = ? AND peer_json = ? AND kind = 'folder'`),
-  getFolderShare: db.prepare(`SELECT * FROM shares WHERE account_id = ? AND peer_json = ? AND kind = 'folder' LIMIT 1`),
+  getFolderShare: db.prepare(`SELECT * FROM shares WHERE account_id = ? AND peer_json = ? AND kind = 'folder' ORDER BY created_at DESC LIMIT 1`),
   incShareDownload: db.prepare(`UPDATE shares SET downloads = downloads + 1 WHERE id = ?`),
   listShares: db.prepare(`SELECT * FROM shares ORDER BY created_at DESC`),
   deleteShare: db.prepare(`DELETE FROM shares WHERE id = ?`),

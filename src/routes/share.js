@@ -144,7 +144,6 @@ share.post("/shares", requireAppAuth, requireAccount, (req, res, next) => {
     const id = shortId(10);
 
     if (shareKind === "folder") {
-      stmt.deleteFolderShares.run(req.accountId, row.peer_json);
       stmt.addShare.run({
         id, account_id: req.accountId, peer_json: row.peer_json, msg_id: null, multipart_id: null,
         name: title || row.title || "Folder", mime: null, size: null,
@@ -155,7 +154,6 @@ share.post("/shares", requireAppAuth, requireAccount, (req, res, next) => {
       // a split (multipart) file shared as one logical file
       const mp = stmt.getMultipart.get(String(multipartId));
       if (!mp || mp.account_id !== req.accountId) return res.status(404).json({ error: "File not found" });
-      stmt.deleteSharesByMultipart.run(String(multipartId));
       stmt.addShare.run({
         id, account_id: req.accountId, peer_json: row.peer_json, msg_id: null, multipart_id: String(multipartId),
         name: name || mp.name || null, mime: mime || mp.mime || null, size: size || mp.size || null,
@@ -164,7 +162,6 @@ share.post("/shares", requireAppAuth, requireAccount, (req, res, next) => {
       });
     } else {
       if (!msgId) return res.status(400).json({ error: "msgId required" });
-      stmt.deleteSharesByFile.run(req.accountId, row.peer_json, Number(msgId));
       stmt.addShare.run({
         id, account_id: req.accountId, peer_json: row.peer_json, msg_id: Number(msgId), multipart_id: null,
         name: name || null, mime: mime || null, size: size || null,
