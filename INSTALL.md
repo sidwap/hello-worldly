@@ -58,6 +58,9 @@ Edit `.env`:
 PORT=3001
 HOST=127.0.0.1            # keep 127.0.0.1 if you'll use a reverse proxy
 
+# Must be outside the app checkout so a redeploy cannot remove your state
+DATA_DIR=/home/your-user/apps/tgdrive-data
+
 # Generate with:  openssl rand -hex 32
 SECRET=CHANGE_ME_to_a_long_random_hex_string
 
@@ -221,17 +224,29 @@ npm install            # in case dependencies changed
 pm2 restart tgdrive
 ```
 
+The first start after this persistence upgrade automatically copies an existing
+`data/tgdrive.sqlite` (plus branding and thumbnails) to `DATA_DIR` when the
+destination has no database yet. Do not delete the old `data/` directory until
+you have restarted once and confirmed your users, Telegram account, and shares
+are present.
+
+For future deployments, replace only the application checkout. Never delete or
+overwrite `DATA_DIR`. If your host uses release directories or containers, mount
+a persistent volume at `DATA_DIR`.
+
 ---
 
 ## 9. Backups
 
-The only stateful thing on the server is the SQLite database in `data/`. Back it up regularly:
+All durable state lives in `DATA_DIR`. Back up the SQLite database regularly:
 
 ```bash
-sqlite3 data/tgdrive.sqlite ".backup '/backups/tgdrive-$(date +%F).sqlite'"
+sqlite3 /home/your-user/apps/tgdrive-data/tgdrive.sqlite ".backup '/backups/tgdrive-$(date +%F).sqlite'"
 ```
 
-Files themselves are in your Telegram account, so they're as safe as your Telegram account is.
+Also retain `DATA_DIR/.secret` and any branding files. To restore, stop the app,
+copy the backup database and `.secret` into the configured `DATA_DIR`, then
+start the app. Files themselves remain in your Telegram account.
 
 ---
 
