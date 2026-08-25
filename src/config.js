@@ -53,7 +53,13 @@ function secretFromEnvFile(envFile) {
 function readSecret() {
   const envFile = path.join(ROOT, ".env");
   const secretFile = path.join(DATA_DIR, ".secret");
-  if (process.env.SECRET && process.env.SECRET.length >= 32) return process.env.SECRET;
+  if (process.env.SECRET && process.env.SECRET.length >= 32) {
+    // Mirror an explicitly configured key into persistent storage so links and
+    // sessions remain stable even if a later deployment replaces the .env file.
+    const saved = fs.existsSync(secretFile) ? fs.readFileSync(secretFile, "utf8").trim() : "";
+    if (saved !== process.env.SECRET) fs.writeFileSync(secretFile, `${process.env.SECRET}\n`, { mode: 0o600 });
+    return process.env.SECRET;
+  }
   const persisted = fs.existsSync(secretFile) ? fs.readFileSync(secretFile, "utf8").trim() : "";
   if (persisted.length >= 32) return persisted;
 
